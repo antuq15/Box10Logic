@@ -41,7 +41,7 @@
             text-align: center;
             max-width: 800px;
         }
-        #cesiumContainer { /* For the global map view */
+        #cesiumContainer {
             width: 100%;
             height: 500px;
             max-width: 1000px;
@@ -52,7 +52,7 @@
             margin-top: 20px;
             border: 2px solid #6ee7b7;
         }
-        #portalCanvas { /* For the specific portal visualization */
+        #portalCanvas {
             width: 100%;
             height: 600px;
             max-width: 900px;
@@ -64,7 +64,7 @@
             cursor: grab;
             margin-top: 20px;
         }
-        #lift-controls {
+        #lift-controls, #vortex-controls {
             background-color: rgba(45, 55, 72, 0.8);
             border-radius: 10px;
             padding: 1.5rem;
@@ -205,6 +205,7 @@
             fill: #ffd700;
         }
         .flipped-k {
+            /* This applies the visual flip. Conceptual: 'ʞ' */
             transform: scaleX(-1);
             transform-origin: center center; 
         }
@@ -237,11 +238,11 @@
             50% { opacity: 0.15; }
             100% { opacity: 0.1; }
         }
-        /* Hide all canvas by default, show based on app state */
+        /* Canvas visibility managed by JS */
         .app-canvas { display: none; }
         .app-canvas.active { display: block; }
 
-        /* General content sections for different views */
+        /* Content sections for different views */
         .content-section {
             width: 100%;
             max-width: 900px;
@@ -250,7 +251,7 @@
             padding: 20px;
             margin-top: 20px;
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-            display: none; /* Hidden by default */
+            display: none;
             flex-direction: column;
             gap: 1rem;
         }
@@ -258,7 +259,7 @@
         .content-section pre {
             background-color: #1a202c;
             color: #e0f2f7;
-            padding: 1rem;
+            padding: 1em;
             border-radius: 8px;
             overflow-x: auto;
             white-space: pre-wrap;
@@ -310,9 +311,13 @@
         <div style="width: 100%; max-width: 350px; height: 100px; display: flex; justify-content: center; align-items: center; margin-bottom: 20px;">
             <svg viewBox="0 0 350 100" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;">
                 <text x="0" y="80" class="artiste-text">o</text>
-                <text x="70" y="80" class="artiste-text flipped-k" transform="translate(100,0) scale(-1,1) translate(-100,0)">K</text>
+                
+                <text x="70" y="80" class="artiste-text" transform="translate(100,0) scale(-1,1) translate(-100,0)">K</text>
+                
                 <text x="170" y="80" class="artiste-text">-</text>
+                
                 <text x="210" y="80" class="artiste-text">K</text>
+                
                 <g class="tao-group">
                     <text x="280" y="80" class="artiste-text">o</text>
                     <circle cx="310" cy="50" r="25" class="tao-symbol-outer-circle"></circle>
@@ -405,14 +410,14 @@
 
 
     <script>
-        // --- GLOBAL VARIABLES & Refs ---
+        // --- GLOBAL VARIABLES ---
         let scene, camera, renderer, controls; // For TowerView
         let portalScene, portalCamera, portalRenderer, portalControls; // For VortexView
         let mapViewer; // For GlobalMapView (Cesium)
 
         let buildingGroup, liftMesh, mirrorMeshFront, mirrorMeshBack; // Tower specific
         let currentFloor = 'G'; let targetFloor = 'G'; let isMoving = false;
-        const floorMeshes = {}; // Stores references to Three.js floor objects
+        const floorMeshes = {};
         const floorHighlightsRefs = {}; // Stores references to floor-specific visual groups
 
         let spinningWoodMesh, portalMesh, vortexParticles; // Vortex specific
@@ -420,12 +425,12 @@
         let cleopatraMesh, handlionMesh; // Cleopatra in VortexView
 
         let videoElement; let videoTexture; let videoLoaded = false; let videoLoadProgress = 0;
-        const VIDEO_URL = "https://storage.googleapis.com/haxit/stock_forest_motion_small.mp4";
+        const VIDEO_URL = "https://storage.googleapis.com/haxit/stock_forest_motion_small.mp4"; // Ensure this URL is publicly accessible
 
         let audioContextStarted = false;
         let liftSoundAscend, liftSoundDescend, doorOpenSound, doorCloseSound;
         let wormholeActivateSound, wormholeAmbianceSound;
-        let launchSound, reanimateSound; // Added reanimateSound ref
+        let launchSound, reanimateSound;
 
         // DOM element references
         let rpmValueDisplay, sekedValueDisplay, portalMessageElement, aletheianMessageElement,
@@ -445,7 +450,7 @@
             3: "Floor 3: Cultural Fabric / NOH/EVOH. Weaving collective narratives, expressing absurd truth.",
             4: "Floor 4: Canon Content & Journals. Your personal lexicon, secure private thoughts, poem attribution.",
             5: "Floor 5: GIS & GPS Attribution. Geospatial analysis, sacred coordinates, mapping reality. (Personal logging & Journaling)",
-            6: "Floor 6: Future Work & Opportunities. Networking, job hunting, financial models, monetization pathways. (DevMap & Site Acquisition)",
+            6: "Floor 6: Future Work & Opportunities. Networking, job hunting, financial models, monetization pathways. (DevMap Link)",
             7: "Floor 7: Bluebottle Flywings R&D. Flight dynamics, Seked principle, biomimicry, personal transport. (Quantum Nanotech Lab - The Wormhole Access)",
             8: "Floor 8: AETH:// Protocol Design. Non-Euclidean time, wormhole theory, secure communication.",
             9: "Floor 9: Core Logic & Metaphysics. Qutrit chips, zero-error functions, H-Observer, quantum consciousness. (Matter from Antimatter)",
@@ -457,11 +462,13 @@
             uniform: (min, max) => Math.random() * (max - min) + min,
             choice: (arr) => arr[Math.floor(Math.random() * arr.length)]
         };
+        // Simple polyfill for String.prototype.ljust
         if (!String.prototype.ljust) {
             String.prototype.ljust = function(width, char=' ') {
                 return this.length >= width ? this.toString() : this.toString() + char.repeat(width - this.length);
             };
         }
+        // Simple polyfill for Object.prototype.copy
         if (!Object.prototype.copy) {
             Object.prototype.copy = function() { return JSON.parse(JSON.stringify(this)); };
         }
@@ -505,345 +512,393 @@
             }).catch(e => console.error("Tone.js Audio Context failed to start:", e));
         }
 
-        // --- THREE.js Scene Setup for Aletheian Tower ---
-        function setupTowerScene(canvasElement) {
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x0a0a20);
-            camera = new THREE.PerspectiveCamera(75, canvasElement.clientWidth / canvasElement.clientHeight, 0.1, 1000);
-            camera.position.set(0, 15, 25);
-            
-            renderer = new THREE.WebGLRenderer({ canvas: canvasElement, antialias: true });
-            renderer.setSize(canvasElement.clientWidth, canvasElement.clientHeight);
-            renderer.setPixelRatio(window.devicePixelRatio);
+        // --- Core Scene Setup Function ---
+        const setupCoreScene = (canvasElement, isPortalScene = false) => {
+            let currentScene = new THREE.Scene();
+            let currentCamera = new THREE.PerspectiveCamera(75, canvasElement.clientWidth / canvasElement.clientHeight, 0.1, 1000);
+            let currentRenderer = new THREE.WebGLRenderer({ canvas: canvasElement, antialias: true });
+            currentRenderer.setSize(canvasElement.clientWidth, canvasElement.clientHeight);
+            currentRenderer.setPixelRatio(window.devicePixelRatio);
 
-            controls = new OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true; controls.dampingFactor = 0.05;
-            controls.target.set(0, FLOOR_Y_POSITIONS['G'] + FLOOR_HEIGHT * 5, 0);
-            controls.enablePan = true; controls.enableZoom = true; controls.enableRotate = true;
+            let currentControls = new OrbitControls(currentCamera, currentRenderer.domElement);
+            currentControls.enableDamping = true; currentControls.dampingFactor = 0.05;
+            currentControls.enablePan = true; currentControls.enableZoom = true; currentControls.enableRotate = true;
 
-            const ambientLight = new THREE.AmbientLight(0x404040); scene.add(ambientLight);
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8); directionalLight.position.set(5, 10, 5).normalize(); scene.add(directionalLight);
+            const ambientLight = new THREE.AmbientLight(0x404040); currentScene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8); directionalLight.position.set(5, 10, 5).normalize(); currentScene.add(directionalLight);
 
-            buildingGroup = new THREE.Group(); scene.add(buildingGroup);
-
-            const buildingWidth = 8; const buildingDepth = 8;
-            const groundGeo = new THREE.PlaneGeometry(buildingWidth * 3, buildingDepth * 3);
-            const groundMat = new THREE.MeshPhongMaterial({ color: 0x3d3d3d, side: THREE.DoubleSide });
-            const groundMesh = new THREE.Mesh(groundGeo, groundMat);
-            groundMesh.rotation.x = -Math.PI / 2; groundMesh.position.y = -0.1;
-            buildingGroup.add(groundMesh);
-
-            const floorMaterial = new THREE.MeshPhongMaterial({ color: 0x555555, transparent: true, opacity: 0.8 });
-            
-            // Load font for THREE.TextGeometry (async)
-            const fontLoader = new THREE.FontLoader();
-            fontLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/fonts/helvetiker_regular.typeface.json', function (font) {
-                window.THREE_FONT_JSON = font;
-                createFloorMeshes(font);
-                document.getElementById('loading-overlay').style.display = 'none';
-            }, 
-            function (xhr) { // Progress
-                const percentLoaded = Math.round((xhr.loaded / xhr.total * 100));
-                document.getElementById('loading-progress').textContent = `Loading 3D assets: ${percentLoaded}%`;
-            },
-            function (err) { // Error
-                console.error('An error happened loading font:', err);
-                createFloorMeshes(null); // Proceed without text
-                document.getElementById('loading-overlay').style.display = 'none';
-                setPortalMessage("Warning: 3D Text font failed to load.");
-            });
-
-            // Lift, Mirror, Video Background Setup
-            const liftWidth = 2; const liftHeight = FLOOR_HEIGHT - 0.5; const liftDepth = 2;
-            const liftGeometry = new THREE.BoxGeometry(liftWidth, liftHeight, liftDepth);
-            const liftMaterial = new THREE.MeshPhongMaterial({ color: 0x888888, transparent: true, opacity: 0.9 });
-            liftMesh = new THREE.Mesh(liftGeometry, liftMaterial);
-            liftMesh.position.set(buildingWidth/2 - liftWidth/2 - 0.5, FLOOR_Y_POSITIONS['G'] + liftHeight/2, buildingDepth/2/2 - liftDepth/2 - 0.5);
-            buildingGroup.add(liftMesh);
-
-            const mirrorGeometry = new THREE.PlaneGeometry(liftWidth - 0.1, liftHeight - 0.1);
-            const mirrorMaterial = new THREE.MeshBasicMaterial({ color: 0xaaaaaa, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
-            mirrorMeshFront = new THREE.Mesh(mirrorGeometry, mirrorMaterial);
-            mirrorMeshFront.position.set(liftMesh.position.x, liftMesh.position.y, liftMesh.position.z + liftDepth / 2 + 0.05);
-            buildingGroup.add(mirrorMeshFront);
-            mirrorMeshBack = new THREE.Mesh(mirrorGeometry, mirrorMaterial);
-            mirrorMeshBack.position.set(liftMesh.position.x, liftMesh.position.y, liftMesh.position.z - liftDepth / 2 - 0.05);
-            mirrorMeshBack.rotation.y = Math.PI;
-            buildingGroup.add(mirrorMeshBack);
-
-            videoElement = document.createElement('video');
-            videoElement.src = VIDEO_URL;
-            videoElement.loop = true; videoElement.muted = true; videoElement.crossOrigin = 'anonymous'; videoElement.preload = 'auto';
-            videoElement.addEventListener('loadeddata', () => { videoLoaded = true; videoElement.play(); });
-            videoElement.addEventListener('progress', (e) => { if (e.total > 0) { videoLoadProgress = Math.round((e.loaded / e.total) * 100); } });
-            videoElement.addEventListener('error', (e) => { console.error("Error loading video:", e); setPortalMessage("Error loading video. Proceeding without video. (Check console)"); });
-            backgroundPlane = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshBasicMaterial({ map: new THREE.VideoTexture(videoElement), side: THREE.DoubleSide }));
-            backgroundPlane.position.z = -50; sceneRef.current.add(backgroundPlane);
-
-            animate(); // Start animation loop
-        }
-
-        // --- Creates specific floor visual content (called after font loads) ---
-        const createFloorMeshes = (font) => {
-            const buildingWidth = 8; const buildingDepth = 8;
-            const floorMaterial = new THREE.MeshPhongMaterial({ color: 0x555555, transparent: true, opacity: 0.8 });
-
-            for (let i = 0; i <= 10; i++) {
-                const floorLabel = i === 0 ? 'G' : i.toString();
-                const floorY = FLOOR_Y_POSITIONS[floorLabel];
-
-                const floorGeo = new THREE.BoxGeometry(buildingWidth, 0.5, buildingDepth);
-                const floorMesh = new THREE.Mesh(floorGeo, floorMaterial.clone());
-                floorMesh.position.y = floorY;
-                floorMesh.userData.floor = floorLabel;
-                buildingGroupRef.current.add(floorMesh);
-                floorMeshes[floorLabel] = floorMesh;
-
-                if (i < 10) {
-                    const wallHeight = FLOOR_HEIGHT - 0.5;
-                    const wallMat = new THREE.MeshPhongMaterial({ color: 0x4a4a4a, transparent: true, opacity: 0.6 });
-                    const frontWallGroup = new THREE.Group(); const doorWidth = 2; const doorHeight = 3;
-
-                    const frontWallLeft = new THREE.Mesh(new THREE.BoxGeometry((buildingWidth - doorWidth) / 2, wallHeight, 0.2), wallMat);
-                    frontWallLeft.position.x = -(buildingWidth + doorWidth) / 4; frontWallGroup.add(frontWallLeft);
-                    const frontWallRight = new THREE.Mesh(new THREE.BoxGeometry((buildingWidth - doorWidth) / 2, wallHeight, 0.2), wallMat);
-                    frontWallRight.position.x = (buildingWidth + doorWidth) / 4; frontWallGroup.add(frontWallRight);
-                    const frontWallTop = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, wallHeight - doorHeight, 0.2), wallMat);
-                    frontWallTop.position.y = (wallHeight + doorHeight) / 2 - wallHeight; frontWallGroup.add(frontWallTop);
-                    
-                    frontWallGroup.position.set(0, floorY + 0.5 + wallHeight/2, buildingDepth/2 - 0.1);
-                    buildingGroupRef.current.add(frontWallGroup);
-
-                    const wallBack = new THREE.Mesh(new THREE.BoxGeometry(buildingWidth, wallHeight, 0.2), wallMat); wallBack.position.set(0, floorY + 0.5 + wallHeight/2, -buildingDepth/2 + 0.1); buildingGroupRef.current.add(wallBack);
-                    const wallLeft = new THREE.Mesh(new THREE.BoxGeometry(0.2, wallHeight, buildingDepth), wallMat); wallLeft.position.set(-buildingWidth/2 + 0.1, floorY + 0.5 + wallHeight/2, 0); buildingGroupRef.current.add(wallLeft);
-                    const wallRight = new THREE.Mesh(new THREE.BoxGeometry(0.2, wallHeight, buildingDepth), wallMat); wallRight.position.set(buildingWidth/2 - 0.1, floorY + 0.5 + wallHeight/2, 0); buildingGroupRef.current.add(wallRight);
-
-                    // --- Visualizations for specific floors ---
-                    floorHighlightsRefs.current[floorLabel] = new THREE.Group();
-                    floorHighlightsRefs.current[floorLabel].position.y = floorY + 0.6;
-                    sceneRef.current.add(floorHighlightsRefs.current[floorLabel]);
-                    floorHighlightsRefs.current[floorLabel].visible = false; // Hide until floor is active
-
-                    if (font) { // Only add text if font is loaded
-                        const createText = (text, size, height, color, x, y, z) => {
-                            const geo = new THREE.TextGeometry(text, { font: font, size: size, height: height });
-                            const mat = new THREE.MeshBasicMaterial({ color: color });
-                            const mesh = new THREE.Mesh(geo, mat);
-                            mesh.geometry.computeBoundingBox(); // Compute bounding box for centering
-                            const centerOffset = new THREE.Vector3();
-                            geo.boundingBox.getCenter(centerOffset);
-                            mesh.position.set(x - centerOffset.x, y - centerOffset.y, z);
-                            return mesh;
-                        };
-
-                        if (floorLabel === '10') { // Box10Logic HQ
-                            floorHighlightsRefs.current[floorLabel].add(createText('BOX10LOGIC HQ', 0.5, 0.1, 0xffd700, 0, 1.5, 0));
-                            const crystalGeo = new THREE.OctahedronGeometry(0.8);
-                            const crystalMat = new THREE.MeshPhongMaterial({ color: 0x00ffff, transparent: true, opacity: 0.7, emissive: 0x00ffff, emissiveIntensity: 0.5 });
-                            const crystalMesh = new THREE.Mesh(crystalGeo, crystalMat); crystalMesh.position.set(0, 1.5, 0);
-                            floorHighlightsRefs.current[floorLabel].add(crystalMesh);
-                            floorHighlightsRefs.current[floorLabel].userData.crystal = crystalMesh;
-                        } else if (floorLabel === '9') { // Core Logic & Metaphysics (Quantum Potential)
-                            floorHighlightsRefs.current[floorLabel].add(createText('Core Logic: Quantum Potential', 0.4, 0.05, 0x00ff00, 0, 1.5, 0));
-                            const qpGeo = new THREE.BufferGeometry(); const qpPositions = new Float32Array(1000 * 3); const qpColors = new Float32Array(1000 * 3);
-                            for(let j=0; j<1000; j++) {
-                                qpPositions[3*j] = (Math.random()-0.5)*3; qpPositions[3*j+1] = (Math.random()-0.5)*3; qpPositions[3*j+2] = (Math.random()-0.5)*3;
-                                qpColors[3*j] = 0.5; qpColors[3*j+1] = 0.5; qpColors[3*j+2] = 1;
-                            }
-                            qpGeo.setAttribute('position', new THREE.BufferAttribute(qpPositions, 3)); qpGeo.setAttribute('color', new THREE.BufferAttribute(qpColors, 3));
-                            const qpMat = new THREE.PointsMaterial({ size: 0.1, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.7 });
-                            const qpParticles = new THREE.Points(qpGeo, qpMat); floorHighlightsRefs.current[floorLabel].add(qpParticles);
-                            const planeGeo = new THREE.PlaneGeometry(5,5); const planeMat = new THREE.MeshBasicMaterial({ color: 0x00aaff, transparent: true, opacity: 0.3, side:THREE.DoubleSide });
-                            const quantumPlane = new THREE.Mesh(planeGeo, planeMat); quantumPlane.rotation.x = Math.PI / 4; quantumPlane.rotation.y = Math.PI / 4;
-                            floorHighlightsRefs.current[floorLabel].add(quantumPlane);
-                            floorHighlightsRefs.current[floorLabel].userData.quantumPlane = quantumPlane; floorHighlightsRefs.current[floorLabel].userData.qpParticles = qpParticles;
-                        } else if (floorLabel === '8') { // AETH:// Protocol Design (Conceptual Wormhole Portal)
-                            floorHighlightsRefs.current[floorLabel].add(createText('AETH:// Protocol Design', 0.4, 0.05, 0x00ffff, 0, 1.5, 0));
-                            const vortexGeo = new THREE.BufferGeometry(); const vortexPositions = new Float32Array(500 * 3);
-                            for(let j=0; j<500; j++) {
-                                const r = random.uniform(0, 2); const theta = random.uniform(0, Math.PI * 2); const z = (random.uniform(-1,1)) * 4;
-                                vortexPositions[3*j] = r * Math.cos(theta); vortexPositions[3*j+1] = r * Math.sin(theta); vortexPositions[3*j+2] = z;
-                            }
-                            vortexGeo.setAttribute('position', new THREE.BufferAttribute(vortexPositions, 3));
-                            const vortexMat = new THREE.PointsMaterial({ color: 0x00ffff, size: 0.05, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.5 });
-                            const smallVortex = new THREE.Points(vortexGeo, vortexMat); smallVortex.position.z = -1;
-                            floorHighlightsRefs.current[floorLabel].add(smallVortex);
-                            floorHighlightsRefs.current[floorLabel].userData.smallVortex = smallVortex;
-                        } else if (floorLabel === '7') { // Bluebottle Flywings R&D (Qi-gong Wormhole Access)
-                            floorHighlightsRefs.current[floorLabel].add(createText('Bluebottle R&D (Qi-gong Access)', 0.4, 0.05, 0x8A2BE2, 0, 1.5, 0));
-                            const coreMatterGeo = new THREE.SphereGeometry(1, 16, 16);
-                            const coreMatterMat = new THREE.MeshBasicMaterial({ color: 0x8A2BE2, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending });
-                            const coreMatterMesh = new THREE.Mesh(coreMatterGeo, coreMatterMat);
-                            floorHighlightsRefs.current[floorLabel].add(coreMatterMesh);
-                            floorHighlightsRefs.current[floorLabel].userData.coreMatter = coreMatterMesh;
-
-                            const qiParticlesGeo = new THREE.BufferGeometry(); const qiPositions = new Float32Array(1000 * 3); const qiColors = new Float32Array(1000 * 3); const qiSizes = new Float32Array(1000);
-                            for(let j=0; j<1000; j++) {
-                                qiPositions[3*j] = (Math.random()-0.5) * 0.5; qiPositions[3*j+1] = (Math.random()-0.5) * 0.5; qiPositions[3*j+2] = (Math.random()-0.5) * 0.5;
-                                qiColors[3*j] = 0; qiColors[3*j+1] = 1; qiColors[3*j+2] = 0;
-                                qiSizes[j] = random.uniform(0.1, 0.3);
-                            }
-                            qiParticlesGeo.setAttribute('position', new THREE.BufferAttribute(qiPositions, 3)); qiParticlesGeo.setAttribute('color', new THREE.BufferAttribute(qiColors, 3)); qiParticlesGeo.setAttribute('size', new THREE.BufferAttribute(qiSizes, 1));
-                            const qiMat = new THREE.PointsMaterial({ size: 0.1, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.8 });
-                            const qiParticles = new THREE.Points(qiParticlesGeo, qiMat); floorHighlightsRefs.current[floorLabel].add(qiParticles);
-                            floorHighlightsRefs.current[floorLabel].userData.qiParticles = qiParticles;
-
-                            const wormholeRingGeo = new THREE.TorusGeometry(2, 0.1, 16, 100);
-                            const wormholeRingMat = new THREE.MeshBasicMaterial({ color: 0xFFD700, emissive: 0xFFD700, emissiveIntensity: 0.5 });
-                            const wormholeRing = new THREE.Mesh(wormholeRingGeo, wormholeRingMat);
-                            wormholeRing.rotation.x = Math.PI / 2; wormholeRing.position.z = -2;
-                            floorHighlightsRefs.current[floorLabel].add(wormholeRing);
-                            floorHighlightsRefs.current[floorLabel].userData.wormholeRing = wormholeRing;
-                        } else { // For other floors, simply add a conceptual text label
-                            floorHighlightsRefs.current[floorLabel].add(createText(`Floor ${floorLabel}: ${FLOOR_INFO[floorLabel].split(':')[0]}`, 0.4, 0.05, 0x6ee7b7, 0, 1.5, 0));
-                        }
-                    }
-                }
-            });
+            return { scene: currentScene, camera: currentCamera, renderer: currentRenderer, controls: currentControls };
         };
 
-        // --- Three.js Animation Loop ---
-        function animate() {
-            animationFrameId = requestAnimationFrame(animate);
+        // --- Render Loop Management ---
+        let animationFrameId;
+        let activeRenderLoop = 'none'; // 'tower', 'vortex', 'map'
 
-            time += 0.01;
+        function startRenderLoop(loopName) {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            activeRenderLoop = loopName;
+            let time = 0; // Local time for each loop
 
-            // Update Floor Highlights animations
-            Object.keys(floorHighlightsRefs.current).forEach(floorLabel => {
-                const highlightGroup = floorHighlightsRefs.current[floorLabel];
-                if (highlightGroup.visible) {
-                    if (highlightGroup.userData.crystal) { highlightGroup.userData.crystal.rotation.y += 0.01; highlightGroup.userData.crystal.rotation.x += 0.005; }
-                    if (highlightGroup.userData.quantumPlane) { highlightGroup.userData.quantumPlane.rotation.z += 0.005; }
-                    if (highlightGroup.userData.qpParticles) {
-                        const qpPositions = highlightGroup.userData.qpParticles.geometry.attributes.position.array;
-                        for(let i=0; i<qpPositions.length/3; i++) {
-                            qpPositions[3*i] += (Math.random()-0.5)*0.01; qpPositions[3*i+1] += (Math.random()-0.5)*0.01; qpPositions[3*i+2] += (Math.random()-0.5)*0.01;
-                        }
-                        highlightGroup.userData.qpParticles.geometry.attributes.position.needsUpdate = true;
-                    }
-                    if (highlightGroup.userData.smallVortex) { highlightGroup.userData.smallVortex.rotation.z += 0.05; }
-                    if (highlightGroup.userData.beam) { highlightGroup.userData.beam.material.opacity = 0.1 + Math.abs(Math.sin(Date.now() * 0.002)) * 0.2; }
-                    if (floorLabel === '7') { // Floor 7 specific animations
-                        if (highlightGroup.userData.coreMatter) { highlightGroup.userData.coreMatter.scale.setScalar(1 + Math.sin(Date.now() * 0.005) * 0.1); }
-                        if (highlightGroup.userData.qiParticles) {
-                            const qiPositions = highlightGroup.userData.qiParticles.geometry.attributes.position.array;
-                            const qiSizes = highlightGroup.userData.qiParticles.geometry.attributes.size.array;
-                            for(let i=0; i<qiPositions.length/3; i++) {
-                                qiPositions[3*i] += qiPositions[3*i] * 0.005;
-                                qiPositions[3*i+1] += 0.05 * qiSizes[i];
-                                if (qiPositions[3*i+1] > FLOOR_HEIGHT / 2) {
-                                    qiPositions[3*i] = (Math.random()-0.5) * 0.5;
-                                    qiPositions[3*i+1] = (Math.random()-0.5) * 0.5;
-                                    qiPositions[3*i+2] = (Math.random()-0.5) * 0.5;
+            const loop = () => {
+                animationFrameId = requestAnimationFrame(loop);
+                time += 0.01;
+
+                if (activeRenderLoop === 'tower') {
+                    // Tower specific animations
+                    Object.keys(floorHighlightsRefs).forEach(floorLabel => {
+                        const highlightGroup = floorHighlightsRefs[floorLabel];
+                        if (highlightGroup.visible) {
+                            if (highlightGroup.userData.crystal) { highlightGroup.userData.crystal.rotation.y += 0.01; highlightGroup.userData.crystal.rotation.x += 0.005; }
+                            if (highlightGroup.userData.quantumPlane) { highlightGroup.userData.quantumPlane.rotation.z += 0.005; }
+                            if (highlightGroup.userData.qpParticles) {
+                                const qpPositions = highlightGroup.userData.qpParticles.geometry.attributes.position.array;
+                                for(let i=0; i<qpPositions.length/3; i++) {
+                                    qpPositions[3*i] += (Math.random()-0.5)*0.01; qpPositions[3*i+1] += (Math.random()-0.5)*0.01; qpPositions[3*i+2] += (Math.random()-0.5)*0.01;
                                 }
+                                highlightGroup.userData.qpParticles.geometry.attributes.position.needsUpdate = true;
                             }
-                            highlightGroup.userData.qiParticles.geometry.attributes.position.needsUpdate = true;
+                            if (highlightGroup.userData.smallVortex) { highlightGroup.userData.smallVortex.rotation.z += 0.05; }
+                            if (highlightGroup.userData.beam) { highlightGroup.userData.beam.material.opacity = 0.1 + Math.abs(Math.sin(Date.now() * 0.002)) * 0.2; }
+                            if (floorLabel === '7') {
+                                if (highlightGroup.userData.coreMatter) { highlightGroup.userData.coreMatter.scale.setScalar(1 + Math.sin(Date.now() * 0.005) * 0.1); }
+                                if (highlightGroup.userData.qiParticles) {
+                                    const qiPositions = highlightGroup.userData.qiParticles.geometry.attributes.position.array;
+                                    const qiSizes = highlightGroup.userData.qiParticles.geometry.attributes.size.array;
+                                    for(let i=0; i<qiPositions.length/3; i++) { qiPositions[3*i] += qiPositions[3*i] * 0.005; qiPositions[3*i+1] += 0.05 * qiSizes[i];
+                                        if (qiPositions[3*i+1] > FLOOR_HEIGHT / 2) { qiPositions[3*i] = (Math.random()-0.5) * 0.5; qiPositions[3*i+1] = (Math.random()-0.5) * 0.5; qiPositions[3*i+2] = (Math.random()-0.5) * 0.5; }
+                                    }
+                                    highlightGroup.userData.qiParticles.geometry.attributes.position.needsUpdate = true;
+                                }
+                                if (highlightGroup.userData.wormholeRing) { highlightGroup.userData.wormholeRing.rotation.z += 0.02; }
+                            }
                         }
-                        if (highlightGroup.userData.wormholeRing) { highlightGroup.userData.wormholeRing.rotation.z += 0.02; }
+                    });
+
+                    // Lift movement animation
+                    if (isMoving) {
+                        const targetY = FLOOR_Y_POSITIONS[targetFloor] + (FLOOR_HEIGHT - liftMesh.geometry.parameters.height) / 2;
+                        const currentY = liftMesh.position.y;
+                        const delta = targetY - currentY;
+                        const moveSpeed = 0.1;
+
+                        if (Math.abs(delta) > 0.05) {
+                            liftMesh.position.y += Math.sign(delta) * moveSpeed;
+                            mirrorMeshFront.position.y = liftMesh.position.y;
+                            mirrorMeshBack.position.y = liftMesh.position.y;
+                            camera.position.y += Math.sign(delta) * moveSpeed;
+                            controls.target.y += Math.sign(delta) * moveSpeed;
+                        } else {
+                            liftMesh.position.y = targetY;
+                            mirrorMeshFront.position.y = targetY;
+                            mirrorMeshBack.position.y = targetY;
+                            camera.position.y = targetY + 15;
+                            controls.target.y = targetY;
+                            isMoving = false;
+                            if (doorOpenSound) doorOpenSound.triggerAttackRelease("C4", "0.5s");
+                            setPortalMessage(`Arrived at ${currentFloor === 'G' ? 'Ground Floor' : `Floor ${currentFloor}`}: ${FLOOR_INFO[currentFloor]}`);
+                            
+                            if (floorHighlightsRefs[currentFloor]) {
+                                floorHighlightsRefs[currentFloor].visible = true;
+                                if (currentFloor === '7' && wormholeAmbianceSound) { wormholeAmbianceSound.mute = false; }
+                            }
+                            setTimeout(() => { if (doorCloseSound) doorCloseSound.triggerAttackRelease("C4", "0.5s"); }, 2000);
+                        }
+                    } else { // If not moving, subtle rotation of whole building
+                        buildingGroup.rotation.y += 0.0005; // Gentle rotation
                     }
-                }
-            });
 
+                    controls.update();
+                    renderer.render(scene, camera);
 
-            // Lift movement animation
-            if (isMoving) {
-                const targetY = FLOOR_Y_POSITIONS[targetFloor] + (FLOOR_HEIGHT - liftMesh.geometry.parameters.height) / 2;
-                const currentY = liftMesh.position.y;
-                const delta = targetY - currentY;
-                const moveSpeed = 0.1;
-
-                if (Math.abs(delta) > 0.05) {
-                    liftMesh.position.y += Math.sign(delta) * moveSpeed;
-                    mirrorMeshFront.position.y = liftMesh.position.y;
-                    mirrorMeshBack.position.y = liftMesh.position.y;
-                    camera.position.y += Math.sign(delta) * moveSpeed;
-                    controls.target.y += Math.sign(delta) * moveSpeed;
-                } else {
-                    liftMesh.position.y = targetY;
-                    mirrorMeshFront.position.y = targetY;
-                    mirrorMeshBack.position.y = targetY;
-                    camera.position.y = targetY + 15;
-                    controls.target.y = targetY;
-                    isMoving = false;
-                    if (doorOpenSound) doorOpenSound.triggerAttackRelease("C4", "0.5s");
-                    setPortalMessage(`Arrived at ${currentFloor === 'G' ? 'Ground Floor' : `Floor ${currentFloor}`}: ${FLOOR_INFO[currentFloor]}`);
+                } else if (activeRenderLoop === 'vortex') {
+                    // Vortex specific animations (from previous Aether Portal code)
+                    const rpmVal = parseFloat(document.getElementById('spinningWoodInput').value);
+                    const sekedVal = parseFloat(document.getElementById('sekedValueInput').value);
                     
-                    if (floorHighlightsRefs.current[currentFloor]) {
-                        floorHighlightsRefs.current[currentFloor].visible = true;
-                        if (currentFloor === '7' && wormholeAmbianceSound) {
-                            wormholeAmbianceSound.mute = false;
+                    const currentVortexParameters = calculateVortexParameters(rpmVal, sekedVal, conceptualVideoAnalysis());
+                    vortexStatusElement.textContent = 
+                        `Intensity: ${currentVortexParameters.vortex_intensity.toFixed(2)}, ` +
+                        `Turbulence: ${currentVortexParameters.vortex_turbulence_factor.toFixed(2)}, ` +
+                        `Beam Status: ${currentVortexParameters.d1_to_d9_beam_status}`;
+
+                    if (spinningWoodMesh) { spinningWoodMesh.rotation.y += rpmVal * 0.001; } // Spin wood
+
+                    if (currentPortalState === 'opening') {
+                        animationProgress += 0.005;
+                        if (animationProgress >= 1) {
+                            currentPortalState = 'wormhole_travel'; animationProgress = 0;
+                            setPortalMessage("Wormhole activated! Traversing the fabric of reality...");
+                            if (wormholeAmbianceSound) wormholeAmbianceSound.mute = false;
+                            if (wormholeActivateSound) wormholeActivateSound.triggerAttackRelease("E5", "1s");
+                            portalControls.autoRotate = true; portalControls.autoRotateSpeed = 5.0;
+                            portalCamera.position.set(0,0,0); portalControls.target.set(0,0,-50);
                         }
+                        portalMesh.scale.setScalar(1 + Math.sin(animationProgress * Math.PI) * 0.5);
+                        portalMesh.material.color.lerp(new THREE.Color(0xFF8C00), animationProgress);
+                        if (backgroundPlane.material.opacity > 0) { backgroundPlane.material.opacity -= 0.02; backgroundPlane.material.needsUpdate = true; }
+                        vortexParticles.visible = true; vortexParticles.material.opacity = animationProgress; vortexParticles.material.needsUpdate = true;
+                        vortexParticles.rotation.z += currentVortexParameters.vortex_rotation_speed_rad_sec * 0.05;
+                        vortexParticles.rotation.x += currentVortexParameters.vortex_tilt_angle_rad * 0.01; vortexParticles.rotation.y += currentVortexParameters.vortex_yaw_speed_rad_sec * 0.01;
+                    } else if (currentPortalState === 'wormhole_travel') {
+                        animationProgress += 0.005;
+                        if (animationProgress >= 1) {
+                            currentPortalState = 'open'; animationProgress = 1;
+                            setPortalMessage("Landed in Machu Picchu amidst the Inca Trail ruins! Oasis of calm awaits.");
+                            if (wormholeAmbianceSound) wormholeAmbianceSound.mute = true;
+                            portalControls.autoRotate = false; portalControls.target.set(0,0,-5); // Focus on Machu Picchu ruins
+                            portalCamera.position.set(10,10,20); // Pull back for wider view of ruins
+                            addJourneyLogEntry("Arrived at Machu Picchu. Oasis of calm reached. Tequila worm pricing available from dawn till dusk.");
+                            setTimeout(() => reanimateCleopatra(currentVortexParameters), 3000);
+                        }
+                        const currentVortexPositions = vortexParticles.geometry.attributes.position.array; const numVortexParticles = currentVortexPositions.length / 3;
+                        for (let i = 0; i < numVortexParticles; i++) {
+                            currentVortexPositions[3 * i + 2] -= currentVortexParameters.vortex_intensity * 0.5;
+                            if (currentVortexPositions[3 * i + 2] < -20) { currentVortexPositions[3 * i + 2] = 20; }
+                            currentVortexPositions[3 * i + 0] += (Math.random() - 0.5) * currentVortexParameters.vortex_turbulence_factor * 0.1;
+                            currentVortexPositions[3 * i + 1] += (Math.random() - 0.5) * currentVortexParameters.vortex_turbulence_factor * 0.1;
+                        }
+                        vortexParticles.geometry.attributes.position.needsUpdate = true;
+                        vortexParticles.rotation.z += currentVortexParameters.vortex_rotation_speed_rad_sec * 0.1;
+                        vortexParticles.rotation.x += currentVortexParameters.vortex_tilt_angle_rad * 0.05; vortexParticles.rotation.y += currentVortexParameters.vortex_yaw_speed_rad_sec * 0.05;
+                        if (machuPicchuParticlesGroup) {
+                            machuPicchuParticlesGroup.visible = true;
+                            machuPicchuParticlesGroup.children.forEach(layer => {
+                                if (layer.material.opacity < 1) { layer.material.opacity += 0.01; layer.material.needsUpdate = true; }
+                            });
+                        }
+                    } else if (currentPortalState === 'open') {
+                        if (vortexParticles.material.opacity > 0) { vortexParticles.material.opacity -= 0.01; vortexParticles.material.needsUpdate = true; } else { vortexParticles.visible = false; }
+                        if (machuPicchuParticlesGroup) machuPicchuParticlesGroup.rotation.y += 0.001;
+                    }
+                    portalControls.update();
+                    portalRenderer.render(portalScene, portalCamera);
+
+                } else if (activeRenderLoop === 'map') {
+                    // Map specific updates (CesiumJS)
+                    if (mapViewer) {
+                        // Example: Fly to a random point to show dynamism
+                        // viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(random.uniform(-180,180), random.uniform(-90,90), 10000000) });
                     }
 
-                    setTimeout(() => {
-                        if (doorCloseSound) doorCloseSound.triggerAttackRelease("C4", "0.5s");
-                    }, 2000);
+                } else if (activeRenderLoop === 'repository') {
+                    // Repository view is static HTML, no Three.js/Cesium rendering needed here
                 }
-            }
-
-            controls.update();
-            rendererRef.current.render(sceneRef.current, cameraRef.current);
+            };
+            loop(); // Start the loop
         }
 
-        // --- Lift Control Logic ---
-        const goToFloor = (floor) => {
-            if (isMoving || floor === currentFloor) return;
+        // --- View Switching Logic ---
+        const switchView = (viewName) => {
+            // Hide all canvases and content sections initially
+            document.querySelectorAll('.app-canvas').forEach(canvasDiv => canvasDiv.classList.remove('active'));
+            document.querySelectorAll('.content-section').forEach(section => section.classList.remove('active'));
 
-            // Deactivate previous floor's visualization
-            if (floorHighlightsRefs.current[currentFloor]) {
-                floorHighlightsRefs.current[currentFloor].visible = false;
-                if (currentFloor === '7' && wormholeAmbianceSound) {
-                    wormholeAmbianceSound.mute = true;
-                }
+            // Dispose previous Three.js/Cesium resources if switching away
+            if (activeRenderLoop === 'tower' && scene) {
+                // Keep tower objects in memory if potentially returning
+                // For a full reset, dispose all like in resetSimulation()
+            } else if (activeRenderLoop === 'vortex' && portalScene) {
+                // Dispose vortex-specific objects if leaving
+            } else if (activeRenderLoop === 'map' && mapViewer) {
+                // Cesium viewer cleanup
+                mapViewer.destroy();
+                mapViewer = null;
             }
 
-            // Conceptual security check: Username/password for Floor 7 (Eastern Promise)
-            if (floor === '7') {
-                const password = prompt("Floor 7: Bluebottle Flywings R&D. Access requires intentional intuition. Password needed for entry. (Conceptual: 'qiaccess')");
-                if (password !== "qiaccess") {
-                    setAletheianMessage("Access Denied: Insufficient internal Qi. Paradigm expansion required.");
-                    if (liftSoundDescendRef.current) liftSoundDescendRef.current.triggerAttackRelease("F2", "0.5s");
-                    return;
-                } else {
-                    setAletheianMessage("Access Granted: Qi-gong alignment detected. Welcome, Architect.");
-                    if (wormholeActivateSound) wormholeActivateSound.triggerAttackRelease("E5", "1s");
-                }
-            } else {
-                setAletheianMessage("");
+            // Activate new view
+            const newViewElement = document.getElementById(`view-${viewName}`);
+            if (newViewElement) {
+                newViewElement.classList.add('active');
             }
 
-            targetFloor = floor;
-            const currentFloorValue = (currentFloor === 'G') ? 0 : currentFloor;
-            const targetFloorValue = (targetFloor === 'G') ? 0 : targetFloor;
-
-            if (targetFloorValue > currentFloorValue) {
-                if(liftSoundAscendRef.current) liftSoundAscendRef.current.triggerAttackRelease("C4", "infinite");
-            } else {
-                if(liftSoundDescendRef.current) liftSoundDescendRef.current.triggerAttackRelease("G3", "infinite");
+            // Initialize or resume new view's specific render loop
+            if (viewName === 'tower') {
+                if (!scene) setupTowerScene(document.getElementById('towerCanvas')); // Re-init if first time or disposed
+                startRenderLoop('tower');
+                // Ensure camera is positioned correctly for tower
+                if (camera) camera.position.set(0, FLOOR_Y_POSITIONS[currentFloor] + 15, 25);
+                if (controls) controls.target.set(0, FLOOR_Y_POSITIONS[currentFloor], 0);
+            } else if (viewName === 'vortex') {
+                if (!portalScene) setupVortexScene(document.getElementById('portalCanvas'));
+                startRenderLoop('vortex');
+                if (portalCamera) portalCamera.position.set(0,0,10);
+                if (portalControls) portalControls.target.set(0,0,0);
+            } else if (viewName === 'map') {
+                if (!mapViewer) setupGlobalMapView();
+                startRenderLoop('map'); // Cesium does its own render loop
+            } else if (viewName === 'repository') {
+                document.getElementById('view-repository').classList.add('active');
+                // No Three.js/Cesium render loop, but ensure content is there
+                simulatePythonOutput();
+                startRenderLoop('repository'); // Placeholder name
             }
-            
-            if(doorCloseSoundRef.current) doorCloseSoundRef.current.triggerAttackRelease("C4", "0.5s");
 
-            setIsMoving(true);
-            setCurrentFloor(floor);
-
-            document.getElementById('current-floor-display').textContent = `Moving to Floor: ${floor}`;
-            document.getElementById('floor-info').textContent = `Loading ${FLOOR_INFO[floor]}...`;
-
-            document.querySelectorAll('.floor-button').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            document.querySelector(`.floor-button[data-floor="${floor}"]`).classList.add('active');
+            // Update header messages if needed
+            document.getElementById('app-title').textContent = `The Aletheian Nexus: ${viewName.charAt(0).toUpperCase() + viewName.slice(1)} View`;
+            document.getElementById('app-description').textContent = `Explore the ${viewName} dimension of our integrated reality.`;
         };
 
-        // --- Lift Call Button (Right side) ---
-        const onLiftCallClick = () => {
-            if (isMoving) {
-                setPortalMessage("Lift is already in motion.");
+
+        // --- Authentication & Main App Mount ---
+        const authenticateAndMountApp = () => {
+            const username = document.getElementById('username-input').value;
+            const password = document.getElementById('password-input').value;
+            // Conceptual credentials
+            if (username === 'Ant' && password === 'Aletheia') {
+                setLoggedIn(true);
+                setAuthMessage('');
+                // Hide auth screen and show main app content
+                document.getElementById('auth-section').style.display = 'none';
+                document.getElementById('main-app-content').style.display = 'flex';
+                // Initialize default view (Tower)
+                switchView('tower');
+                initAudioContext(); // Initialize audio context on first successful login
             } else {
-                const currentFloorLabel = currentFloor;
-                if (currentFloorLabel === 'G') {
-                    setPortalMessage("Lift is at Ground. Please select a floor from the panel.");
-                    if(doorOpenSoundRef.current) doorOpenSoundRef.current.triggerAttackRelease("C4", "0.5s");
-                } else {
-                    goToFloor(
+                setAuthMessage('Access Denied. Intentional intuition required.');
+            }
+        };
+
+        // --- Global Initialization on window load ---
+        window.onload = () => {
+            // Get DOM elements
+            rpmValueDisplay = document.getElementById('rpmValue');
+            sekedValueDisplay = document.getElementById('sekedValue');
+            portalMessageElement = document.getElementById('portal-message-text');
+            aletheianMessageElement = document.getElementById('aletheian-message');
+            vortexStatusElement = document.getElementById('vortex-status');
+            journeyLogElement = document.getElementById('journey-log');
+            codeOutputPre = document.getElementById('code-output');
+
+            // Set initial slider values and their displays
+            document.getElementById('spinningWoodInput').value = 100; // Reset defaults
+            rpmValueDisplay.textContent = 100;
+            document.getElementById('sekedValueInput').value = 5.5; // Reset defaults
+            sekedValueDisplay.textContent = 5.5;
+
+            // Add event listeners for sliders (these update values, but the portal is a separate Canvas instance)
+            document.getElementById('spinningWoodInput').addEventListener('input', (e) => {
+                spinningWoodRPM = parseFloat(e.target.value);
+                rpmValueDisplay.textContent = spinningWoodRPM;
+            });
+            document.getElementById('sekedValueInput').addEventListener('input', (e) => {
+                sekedValue = parseFloat(e.target.value);
+                sekedValueDisplay.textContent = sekedValue;
+            });
+            
+            // Setup lift button handlers (for Tower View)
+            document.querySelectorAll('.floor-button').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    goToFloor(e.target.dataset.floor);
+                });
+            });
+            document.getElementById('lift-button-right').addEventListener('click', onLiftCallClick);
+            
+            // Set initial active floor button for Tower View
+            document.querySelector(`.floor-button[data-floor="G"]`).classList.add('active');
+
+            // Setup general navigation buttons
+            document.querySelectorAll('[data-view]').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    switchView(e.target.dataset.view);
+                });
+            });
+
+            // Set up login button listener
+            document.getElementById('login-button').addEventListener('click', authenticateAndMountApp);
+
+            // Set up Reset button
+            document.getElementById('reset-button').addEventListener('click', resetApplication);
+        };
+
+        // --- Reset Full Application State ---
+        function resetApplication() {
+            // Comprehensive cleanup of all potential Three.js/Cesium scenes
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            activeRenderLoop = 'none';
+
+            const disposeScene = (s, r, c) => {
+                if (r && r.domElement && r.domElement.parentNode) r.domElement.parentNode.removeChild(r.domElement);
+                if (r) r.dispose();
+                if (s) {
+                    s.traverse(obj => {
+                        if (obj.isMesh) {
+                            if (obj.geometry) obj.geometry.dispose();
+                            if (obj.material) {
+                                if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+                                else obj.material.dispose();
+                            }
+                        }
+                    });
+                    while(s.children.length > 0){ s.remove(s.children[0]); }
+                }
+                if (c) c.dispose();
+            };
+
+            // Dispose Tower scene
+            disposeScene(sceneRef.current, rendererRef.current, controlsRef.current);
+            sceneRef.current = null; rendererRef.current = null; controlsRef.current = null; buildingGroupRef.current = null;
+            // Dispose Portal scene
+            disposeScene(portalScene, portalRenderer, portalControls);
+            portalScene = null; portalRenderer = null; portalControls = null;
+            // Dispose Cesium viewer
+            if (mapViewer) {
+                mapViewer.destroy();
+                mapViewer = null;
+            }
+
+            // Dispose Tone.js synths and close context
+            if (liftSoundAscend) liftSoundAscend.dispose(); liftSoundAscend = null;
+            if (liftSoundDescend) liftSoundDescend.dispose(); liftSoundDescend = null;
+            if (doorOpenSound) doorOpenSound.dispose(); doorOpenSound = null;
+            if (doorCloseSound) doorCloseSound.dispose(); doorCloseSound = null;
+            if (wormholeActivateSound) wormholeActivateSound.dispose(); wormholeActivateSound = null;
+            if (wormholeAmbianceSound) wormholeAmbianceSound.dispose(); wormholeAmbianceSound = null;
+            if (launchSound) launchSound.dispose(); launchSound = null;
+            if (reanimateSound) reanimateSound.dispose(); reanimateSound = null;
+            if (Tone.context.state !== 'closed') Tone.context.close();
+            audioContextStarted = false;
+
+            // Pause and reset video element (only one instance)
+            if (videoElement) {
+                videoElement.pause();
+                videoElement.removeAttribute('src');
+                videoElement.load();
+                videoElement.src = VIDEO_URL;
+            }
+
+            // Reset all global/state variables
+            currentFloor = 'G'; targetFloor = 'G'; isMoving = false;
+            videoLoaded = false; videoLoadProgress = 0;
+            setLoggedIn(false); setAuthMessage('');
+            
+            // Reset DOM elements for fresh start
+            document.getElementById('username-input').value = 'Ant';
+            document.getElementById('password-input').value = 'Aletheia';
+            document.getElementById('auth-section').style.display = 'flex';
+            document.getElementById('main-app-content').style.display = 'none';
+            document.getElementById('loading-overlay').style.display = 'flex';
+            document.getElementById('loading-progress').textContent = '0%';
+
+            // Clear messages/logs
+            portalMessageElement.textContent = "Loading Aletheian Nexus...";
+            aletheianMessageElement.textContent = "";
+            vortexStatusElement.textContent = "";
+            journeyLogElement.innerHTML = "";
+            codeOutputPre.textContent = "Running simulations...";
+
+            // Reset navigation button active states
+            document.querySelectorAll('.floor-button').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('[data-view]').forEach(btn => btn.classList.remove('active'));
+            document.querySelector('.floor-button[data-floor="G"]').classList.add('active'); // Default active for tower view
+            document.getElementById('view-tower').classList.add('active'); // Ensure tower is default view active
+
+            // Restart the application lifecycle
+            main();
+        }
+
+        // --- Full cleanup on page unload ---
+        window.onbeforeunload = resetApplication; // Use reset function for full cleanup
+
+    </script>
+</body>
+</html>
